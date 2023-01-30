@@ -1,0 +1,393 @@
+14:42
+
+entity lprs1_homework3 is
+	port(
+		i_clk            :  in std_logic;
+		i_rst            :  in std_logic;
+		i_base           :  in std_logic_vector(1 downto 0);
+		i_sequence       :  in std_logic_vector(63 downto 0);
+		i_load_sequence  :  in std_logic;
+		i_base_src_sel   :  in std_logic;
+		i_cnt_subseq_sel :  in std_logic_vector(1 downto 0); 
+		o_cnt_subseq     : out std_logic_vector(3 downto 0)
+	--	o_cnt_subseq1 : out std_logic_vector(3 downto 0);
+	--	o_cnt_subseq2 : out std_logic_vector(3 downto 0));
+);
+end entity;
+
+
+architecture arch of lprs1_homework3 is
+-- Constants.
+constant A : std_logic_vector(1 downto 0) := "00";
+constant C : std_logic_vector(1 downto 0) := "01";
+constant G : std_logic_vector(1 downto 0) := "10";
+constant T : std_logic_vector(1 downto 0) := "11";
+
+-- Signals.
+type t_state is(IDLE, T0S012, T1S01, C1S2, C2S1, T2S2, A2S0);
+signal s_state, s_next_state : t_state;
+signal s_en_subseq0 : std_logic; --dozvole za brojace
+signal s_en_subseq1 : std_logic;
+signal s_en_subseq2 : std_logic;
+signal s_cnt_subseq0 : std_logic_vector(3 downto 0);--0110=6
+signal s_cnt_subseq1 : std_logic_vector(3 downto 0);--1001=9
+signal s_cnt_subseq2 : std_logic_vector(3 downto 0);--0011=3
+signal s_mux : std_logic_vector(3 downto 0);
+signal s_mux1 : std_logic_vector(1 downto 0);
+signal s_sh_base : std_logic_vector(1 downto 0);
+signal s_base : std_logic_vector(1 downto 0);
+signal s_sh_reg : std_logic_vector(63 downto 0);
+
+
+begin
+
+14:45
+--registar za pamćenje stanja
+process(i_clk,i_rst)
+begin
+if(i_rst='1') then
+s_state <= IDLE;
+elsif(falling_edge(i_clk))then
+s_state <= s_next_state;
+end if;
+end process;--ovo je automat difolt asinhroni
+
+--state
+process(s_state, s_base)
+begin
+case(s_state) is
+when IDLE =>
+if(s_base = T) then
+s_next_state <= T0S012;
+else
+s_next_state <= IDLE;
+end if;
+
+when T0S012 => --t
+if(s_base = T) then
+s_next_state <= T1S01;--tt
+elsif(s_base = C) then
+s_next_state <= C1S2;--tc
+else
+s_next_state <= IDLE;
+end if;
+
+when others => s_next_state <= IDLE;
+end case;
+
+end process;--kad svako stanje prodje
+
+14:45
+--dozvole brojaca
+s_en_subseq0 <= '1' when s_state = C2S1 else '0';
+s_en_subseq1 <= '1' when s_state = T2S2 else '0';
+s_en_subseq2 <= '1' when s_state = A2S0 else '0';
+
+
+
+--brojac 0. podsekvence po modulu 7 asinhroni
+process(i_clk,i_rst) begin
+if(i_rst='1') then
+s_cnt_subseq0 <= "0000";
+elsif (falling_edge(i_clk)) then
+if(s_en_subseq0 = '1') then
+if(s_cnt_subseq0= "0110") then
+s_cnt_subseq0 <= "0000";
+else
+s_cnt_subseq0 <= s_cnt_subseq0 + '1';
+end if;
+end if;
+end if;
+
+end process;
+
+-- o_cnt_subseq0 <= s_cnt_subseq0;
+
+--brojac 1. podsekvence po modulu 10 sinhroni
+process(i_clk) begin
+if(falling_edge(i_clk)) then
+if(i_rst = '1') then
+s_cnt_subseq1 <= "0000";
+else
+if(s_en_subseq1 = '1') then
+if(s_cnt_subseq1 = "1001" ) then
+s_cnt_subseq1 <= "0000";
+else
+s_cnt_subseq1 <= s_cnt_subseq1 + '1';
+end if;
+end if;
+end if;
+end if;
+end process;
+
+
+-- o_cnt_subseq1 <= s_cnt_subseq1;
+
+--brojac 2. podsekvence po modulu 4 asinhroni
+process(i_clk,i_rst) begin
+if(i_rst='1') then
+s_cnt_subseq2 <= "0000";
+elsif (falling_edge(i_clk)) then
+if(s_en_subseq2 = '1') then
+elsif(s_cnt_subseq2= "0011") then
+s_cnt_subseq2 <= "0000";
+else
+s_cnt_subseq2 <= s_cnt_subseq2 + '1';
+
+end if;
+end if;
+
+end process;
+--multiplekser izlazni
+s_mux <= s_cnt_subseq0 when i_cnt_subseq_sel = "00" else
+s_cnt_subseq1 when i_cnt_subseq_sel = "01" else
+s_cnt_subseq2 when i_cnt_subseq_sel = "10" else
+"0000";
+
+o_cnt_subseq <= s_mux;
+
+
+
+
+end architecture;
+
+14:51
+process(i_clk,i_rst) begin--pomeracki registar
+if(i_rst = '1') then s_sh_base <= "00";
+elsif(i_clk'event and i_clk='0') then
+
+if(i_load_sequence = '1') then
+s_sh_reg <= i_sequence;
+else
+s_sh_reg <= s_sh_reg(61 downto 0) & "00";
+end if;
+s_sh_base <= s_sh_reg(63 downto 62);
+end if;
+end process;
+
+
+
+
+
+
+
+--
+process(i_base,i_base_src_sel,s_sh_base) begin
+if (i_base_src_sel = '0') then
+s_mux1 <= i_base;
+else
+s_mux1 <= s_sh_base;
+end if;
+end process;
+s_base<=s_mux1;
+
+18:12
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_unsigned.all;
+
+library work;
+
+entity lprs1_homework3_tb is
+end entity;
+
+architecture arch of lprs1_homework3_tb is
+-- Constants.
+constant A : std_logic_vector(1 downto 0) := "00";
+constant C : std_logic_vector(1 downto 0) := "01";
+constant G : std_logic_vector(1 downto 0) := "10";
+constant T : std_logic_vector(1 downto 0) := "11";
+
+
+constant i_clk_period : time := 10 ns;
+
+signal i_clk : std_logic;
+signal i_rst : std_logic;
+signal i_base : std_logic_vector(1 downto 0);
+signal i_sequence : std_logic_vector(63 downto 0);
+signal i_load_sequence : std_logic;
+signal i_base_src_sel : std_logic;
+signal i_cnt_subseq_sel : std_logic_vector(1 downto 0);
+signal o_cnt_subseq : std_logic_vector(3 downto 0);
+
+begin
+
+uut: entity work.lprs1_homework3
+port map(
+i_clk => i_clk,
+i_rst => i_rst,
+i_base => i_base,
+i_sequence => i_sequence,
+i_load_sequence => i_load_sequence,
+i_base_src_sel => i_base_src_sel,
+i_cnt_subseq_sel => i_cnt_subseq_sel,
+o_cnt_subseq => o_cnt_subseq
+);
+
+clk_p: process
+begin
+i_clk <= '0';
+wait for i_clk_period/2;
+i_clk <= '1';
+wait for i_clk_period/2;
+end process;
+
+stim_p: process
+begin
+-- Test cases:
+-- Test cases:
+i_rst <= '1';
+
+wait for 14 * i_clk_period;
+
+i_rst <= '0';
+
+
+--0. sekvenca
+i_base_src_sel <= '0';
+
+--+*+*+*+*+*+*+*+*+*+*+*+*+1
+--CCGC
+i_base <= C;
+wait for i_clk_period;
+
+i_base <= C;
+wait for i_clk_period;
+
+i_base <= G;
+wait for i_clk_period;
+
+i_base <= C;
+wait for i_clk_period;--tb
+
+18:13
+--1. sekvenca TCAC ACGA CATA ATTG TAGT TGCA GGGC GTTG
+
+i_rst <= '1';
+wait for 14* i_clk_period;
+i_rst <= '0';
+
+i_sequence <= C&T&T&C & C&A&G&T & G&G&G&T & G&T&G&A & C&G&G&T & C&C&T&G & T&G&C&A & T&A&C&C;
+
+i_load_sequence <= '1';
+wait for i_clk_period;
+
+i_load_sequence <= '0';
+
+i_base_src_sel <= '1';
+
+wait for 32*i_clk_period;
+
+wait for i_clk_period;
+
+i_cnt_subseq_sel <= "00";
+wait for i_clk_period;
+
+i_cnt_subseq_sel <= "01";
+wait for i_clk_period;
+
+i_cnt_subseq_sel <= "10";
+wait for i_clk_period;
+
+i_rst <= '1';
+
+wait;
+end process;
+
+
+end architecture;
+
+18:57
+-- Sign extensions.
+sA <= '0' & iA;
+sB <= '0' & iB;
+
+-- Mux with arithmetic-logical operations.
+sC <=
+sA when iSEL = "0000" else
+sA + sB when iSEL = "0001" else
+sA - sB when iSEL = "0010" else
+sA and sB when iSEL = "0011" else
+sA or sB when iSEL = "0100" else
+not(sA) when iSEL = "0101" else
+sA + 1 when iSEL = "0110" else
+sA - 1 when iSEL = "0111" else
+'0' & sA(14 downto 0) & '0' when iSEL = "1000" else
+"00" & sA(15 downto 1) when iSEL = "1001" else
+sA(16) & sA(14 downto 0) & '0' when iSEL = "1010" else
+sA(16) & sA(15) & sA(15 downto 1) when iSEL = "1011" else
+(others => '0');
+
+-- Flags.
+oC <= sC(15 downto 0);
+oZERO <= '1' when sC(15 downto 0) = "0000000000000000" else '0';
+oCARRY <= sC(16);
+oSIGN <= sC(15);--alu
+
+19:11
+.data
+10 //N
+29, 5, 12, 28, 32, 15, 16, 16, 8, 7 //d
+7, 16, 12, 26, 29, 24, 17, 0, 0, 24 //c
+//b
+.text
+main:
+ld R0, R0 //N
+for1_init:
+inc R1, R1 //pd = d
+add R4, R1, R0 //pde = d+N
+add R2, R4, R0
+add R3, R2, R0
+dec R3, R3 //pb = b+N-1
+dec R2, R2 //pc = c+N-1
+for1:
+sub R7, R4, R1 //pd != pde
+jmpz for2_init
+ld R7, R1 //*pd
+ld R6, R2 //*pc
+and R7, R7, R6
+st R7, R3 //*pb = *pd & *pc
+inc R1, R1 //pd++
+dec R2, R2 //pc--
+dec R3, R3 //pb--
+jmp for1
+for2_init:
+mov R2, R3 //pbe = b-1
+add R3, R3, R0 //pb = b+N-1
+sub R1, R1, R1
+not R1, R1
+shr R1, R1 //e = 0x7fff
+for2:
+sub R7, R3, R2 //pb != pbe;
+jmpz end
+ld R7, R3 //*pb
+dec R3, R3 //pb--
+sub R6, R7, R1 //*pb < e
+jmpns for2
+mov R1, R7 //e = *pb;
+jmp for2
+end:
+jmp end
+
+20:49
+mov Rz,Rx Prebacuje sadržaj registra X u registar Z
+add Rz,Rx,Ry Zbir registara X i Y upisuje u registar Z
+sub Rz,Rx,Ry Razliku registara X i Y upisuje u registar Z
+and Rz,Rx,Ry Rezultat logičkog I registara X i Y upisuje u registar Z
+or Rz,Rx,Ry Rezultat logičkog ILI registara X i Y upisuje u registar Z
+not Rz,Rx Negiranu vrednost registra X upisuje u registar Z
+inc Rz,Rx Inkrementira registar X i upisuje u registar Z
+dec Rz,Rx Dekrementira registar X i upisuje u registar Z
+shl Rz,Rx Logički pomeren registar X ulevo upisuje u registar Z
+shr Rz,Rx Logički pomeren registar X udesno upisuje u registar Z
+ashl Rz,Rx Aritmetički pomeren registar X ulevo upisuje u registar Z
+ashr Rz,Rx Aritmetički pomeren registar X udesno upisuje u reg Z
+ld Rz,Ry Upisuje u Rz sadržaj koji se nalazi u memoriji na adresi u Ry
+st Rx,Ry Upisuje u memoriju na adresu koja piše u Ry sadržaj iz Rx
+jmp ADDR Bezuslovni skok na labelu ADDR
+jmpz ADDR Uslovni skok na labelu ADDR ukoliko je rezultat 0
+jmps ADDR Uslovni skok na labelu ADDR ukoliko je rezultat negativan
+jmpc ADDR Uslovni skok na labelu ADDR ukoliko je došlo do prenosa
+jmpnz ADDR Uslovni skok na labelu ADDR ukoliko rezultat nije 0
+jmpns ADDR Uslovni skok na labelu ADDR ukoliko rezultat nije negativan
+jmpnc ADDR Uslovni skok na labelu ADDR ukoliko nije došlo do prenosa
